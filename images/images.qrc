@@ -1,0 +1,20 @@
+<!DOCTYPE RCC>
+<RCC version="1.0">
+    <qresource>
+        <file alias="background.jpg">background.jpg</file>
+        <file alias="background3.jpeg">background3.jpeg</file>
+        <file alias="background4.jpeg">background4.jpeg</file>
+        <file alias="background5.jpeg">background5.jpeg</file>
+        <file alias="chat-download-line.png">chat-download-line.png</file>
+        <file alias="chat-upload-line.png">chat-upload-line.png</file>
+        <file alias="close-circle-line.png">close-circle-line.png</file>
+        <file alias="customer-service-2-line.png">customer-service-2-line.png</file>
+        <file alias="download-cloud-2-line.png">download-cloud-2-line.png</file>
+        <file alias="file-line.png">file-line.png</file>
+        <file alias="folder-line.png">folder-line.png</file>
+        <file alias="message-3-line.png">message-3-line.png</file>
+        <file alias="upload-cloud-2-line.png">upload-cloud-2-line.png</file>
+        <file alias="send-plane-line.png">send-plane-line.png</file>
+        <file alias="user-line.png">user-line.png</file>
+    </qresource>
+</RCC>
