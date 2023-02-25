@@ -63,8 +63,8 @@ class Client_Enter(QWidget):
             if compile_ip.match(self.ip_line.text()): 
                 ip = self.ip_line.text()
                 port = 6666
-                self.client = Client(ip, port)
-                self.close()
+                self.client = Client(self,ip, port)
+                self.hide()
                 self.client.exec_()  
                 self.ip_line.clear()   
             else:    
@@ -76,7 +76,7 @@ class Client_Enter(QWidget):
 
         
 class Client(QDialog):
-    def __init__(self, ip, port):
+    def __init__(self, mainWindow,ip, port):
         super(Client, self).__init__()
         # 1
         self.setWindowTitle("客户端")
@@ -89,6 +89,7 @@ class Client(QDialog):
         self.setWindowFlags(QtCore.Qt.WindowCloseButtonHint)
         self.ip = ip
         self.port = port
+        self.mainWindow = mainWindow
         self.browser = QTextBrowser(self)
         self.edit = QTextEdit(self)
         self.browser.setFont(QFont("宋体",14,QFont.Normal))
@@ -110,7 +111,7 @@ class Client(QDialog):
         
         self.send_btn = QPushButton('发送', self)
         self.send_btn.setEnabled(False)
-        self.close_btn = QPushButton('关闭', self)
+        self.close_btn = QPushButton('清空', self)
         self.close_btn.setIcon(QIcon(":/close-circle-line.png"))
         self.send_btn.setIcon(QIcon(":/send-plane-line.png"))
         self.send_btn.setFont(QFont("宋体",10,QFont.Normal))
@@ -118,30 +119,36 @@ class Client(QDialog):
         self.close_btn.setGeometry(1040,840,100,40)
         self.send_btn.setGeometry(1160,840,100,40)
 
+        self.new_btn = QPushButton('重新输入IP', self)
+        self.new_btn.setIcon(QIcon("':/user-line.png'"))
+        self.new_btn.setFont(QFont("宋体",10,QFont.Normal))
+        self.new_btn.setGeometry(20,840,200,40)
+
         self.timer = QTimer(self)
         self.sock = QTcpSocket(self)
         self.shut_flag = 0
+        self.cnt = 0
         self.connect_tcp()
         self.signal_init()
 
     def connect_tcp(self):
         self.sock.connectToHost(self.ip, self.port)
-        self.sock.disconnected.connect(lambda: self.disconnected_slot(self.sock))
-        
+        self.sock.disconnected.connect(lambda: self.disconnected_slot(self.sock))     
 
     def disconnected_slot(self, sock):
         peer_address = sock.peerAddress().toString()
         peer_port = sock.peerPort()
         sock.close()
-        news = 'IP为{}的服务器已断开！'.format(peer_address)
-        self.browser.append(news)
+        if self.cnt == 0:
+            news = 'IP为{}的服务器已断开！'.format(peer_address)
+            self.browser.append(news)
+            self.cnt = 1
         if self.shut_flag == 0:
             self.timer.start(100)
             self.timer.timeout.connect(self.connect_tcp)
- 
-        
+     
     def signal_init(self):
-        
+        self.new_btn.clicked.connect(self.new_slot)
         self.close_btn.clicked.connect(self.close_slot)        # 4
         self.file_send_btn.clicked.connect(self.file_slot)
         self.file_download_btn.clicked.connect(self.file_download_slot)
@@ -149,24 +156,32 @@ class Client(QDialog):
         self.sock.readyRead.connect(self.read_data_slot)       # 6
         self.edit.textChanged.connect(self.text_change_slot)
 
+    def new_slot(self):
+        self.close()
+        self.mainWindow.show()
+        
     def text_change_slot(self):
         message = self.edit.toPlainText()     
         if '\n' in message:     
-            message = message.replace('\n','')            
-            self.edit.setText(message)            
-            self.write_data_slot()  
-
+            message = message.replace('\n','')   
+            if len(message) != 0:         
+                self.edit.setText(message)            
+                self.write_data_slot() 
+            else:
+                self.edit.clear()
+             
     def write_data_slot(self):
         message = self.edit.toPlainText()                 
-
-        self.browser.append('Client: {}'.format(message))
-        datagram = message.encode()
-        self.sock.write(datagram)
-        self.edit.clear()
+        if len(message) != 0:
+            self.browser.append('Client: {}'.format(message))
+            datagram = message.encode()
+            self.sock.write(datagram)
+            self.edit.clear()
  
     def connected_slot(self):
         if self.timer.isActive():
             self.timer.stop()
+            self.cnt = 0
         message = 'Connected! Ready to chat!'
         self.browser.append(message)
         self.send_btn.setEnabled(True)
@@ -179,12 +194,7 @@ class Client(QDialog):
             self.browser.append('Server: {}'.format(message))
  
     def close_slot(self):
-        self.sock.close()
-        self.close()
- 
-    def closeEvent(self, event):
-        self.sock.close()
-        event.accept()
+        self.edit.clear()
     
     def file_slot(self):
         self.file = File_send(self.ip, self.port)
@@ -244,7 +254,7 @@ class File_send(QDialog):
 
         self.label = QLabel('传输进度条:', self)
         self.label.setFont(QFont("宋体",12,QFont.Bold))
-        self.label.setStyleSheet("color:red;")
+        self.label.setStyleSheet("color:red;")      #设置颜色
         self.label.setGeometry(20,610,110,30)
         self.progress_bar = QProgressBar(self)
         self.progress_bar.setMaximum(100)
@@ -271,6 +281,8 @@ class File_send(QDialog):
         self.send_btn.clicked.connect(self.file_deal_sock_slot)
         self.send_folder_btn.clicked.connect(self.folder_deal_slot)
 
+        self.shut_flag = 0
+
 
     def file_select_slot(self):
         try:
@@ -295,6 +307,7 @@ class File_send(QDialog):
                 self.send_btn.setEnabled(True) 
 
                 self.flag = 000 
+                self.shut_flag = 0
         except:
             pass
 
@@ -332,15 +345,23 @@ class File_send(QDialog):
                 self.progress_bar.setValue(0)
                 self.send_folder_btn.setEnabled(True)    
                 self.flag = 110   # flag中的第一位表示发送文件夹或文件，第二位标记是文件夹中的文件还是单独发送文件
-                                  # 第三位表示文件夹是否遍历完成              
+                                  # 第三位表示文件夹是否遍历完成   
+                self.shut_flag = 0           
         except:
             pass
+
+    def disconnect_slot(self):
+        self.file_sock.close()
+        if self.shut_flag == 0:     #停止传输
+            QMessageBox.information(self, 'information', '服务器异常关闭')
+            self.progress_bar.setValue(0)
 
     def file_deal_sock_slot(self):
         self.file_sock = QTcpSocket()
         self.file_sock.abort()
         self.file_sock.connectToHost(self.ip, self.port+100)
         self.file_sock.bytesWritten.connect(self.sendData_slot)
+        self.file_sock.disconnected.connect(self.disconnect_slot)
         self.file_deal_slot()
 
     def file_deal_slot(self):
@@ -359,22 +380,21 @@ class File_send(QDialog):
         self.file_sock.abort()
         self.file_sock.connectToHost(self.ip, self.port+100)
         self.file_sock.bytesWritten.connect(self.sendData_slot)
+        self.file_sock.disconnected.connect(self.disconnect_slot)
         self.flag = 110
         self.name = self.folder_name
         self.file_header_slot()
-        cnt = 0
         for path, dirnames, filenames in os.walk(self.folder_path):
             fpath = path.replace(self.folder_path, '')
-            if len(dirnames) == 0 and len(filenames) == 0 and cnt == 0:
-                self.null_flag = 1
-            else:
-                self.null_flag = 0
-            cnt += 1
+            
             for dirname in dirnames:
                 self.flag = 110
                 self.name = fpath + "\\" + dirname
                 self.file_header_slot()
-
+        if len(filenames) == 0:
+            self.null_flag = 1
+        else:
+            self.null_flag = 0
         self.index = 0   
 
     def folder_file_header(self):
@@ -447,13 +467,14 @@ class File_send(QDialog):
             self.send_btn.setEnabled(False)
             self.bytesBuff = self.filep.read(min(self.bytesToWrite, buffsize))  # 每次最多发送buffsize的数据
             self.bytesToWrite -= self.file_sock.write(self.bytesBuff)
-            #self.bytesBuff.resize(0)
             self.progress_bar.setValue(int((self.totalBytesToSend - self.bytesToWrite) * 100 / self.totalBytesToSend))
         else:    
             if self.flag == 000:  # 单独发送文件完成
                 self.filep.close()
                 # self.file_sock.close()
                 self.send_btn.setEnabled(False)
+                self.shut_flag = 1
+                self.file_sock.close()
                 QMessageBox.information(self, 'information', '文件发送成功')
             elif self.flag == 10:
                 self.file_sock.flush()
@@ -474,13 +495,15 @@ class File_send(QDialog):
                     self.folder_file_header()
             elif self.flag == 111:
                 self.send_folder_btn.setEnabled(False)
-                # self.file_sock.close()
+                self.shut_flag = 1
+                self.file_sock.close()
                 QMessageBox.information(self, 'information', '文件夹发送成功')
 
     def closeEvent(self, event):
         reply = QMessageBox.question(self, 'Warning', '确认退出？', QMessageBox.Yes, QMessageBox.No)
         if reply == QMessageBox.Yes:
             event.accept()
+            self.shut_flag = 1
         else:
             event.ignore()
 
@@ -518,11 +541,9 @@ class File_download(QDialog):
         self.progress_bar.setMaximum(100)
         self.progress_bar.setGeometry(210,520,840,30)
 
-        self.timer = QTimer(self)
         self.shut_flag = 0
         self.sock = QTcpSocket(self)
         self.connect_tcp()
-        self.sock.connected.connect(self.connected_slot)
         self.sock.readyRead.connect(self.read_data_slot)
 
         self.cb.currentIndexChanged.connect(self.select_slot)
@@ -534,14 +555,11 @@ class File_download(QDialog):
     
     def disconnected_slot(self, sock):
         sock.close()
-        if self.shut_flag == 0:
-            self.timer.start(1000)
-            self.timer.timeout.connect(self.connect_tcp)
-
-    def connected_slot(self):
-        if self.timer.isActive():
-            self.timer.stop()
-        
+        self.download_transfer_sock.close()
+        if self.shut_flag == 0:     #停止传输
+            QMessageBox.information(self, 'information', '服务器异常关闭')
+            self.progress_bar.setValue(0)
+                  
     def read_data_slot(self):
         while self.sock.bytesAvailable():
             datagram = self.sock.read(self.sock.bytesAvailable())
@@ -553,6 +571,7 @@ class File_download(QDialog):
     def select_slot(self):
         self.selction = self.cb.currentText()
         self.index = self.cb.currentIndex()
+        self.shut_flag = 0
         # self.sock.write(index)
 
     def button_slot(self):
@@ -560,18 +579,21 @@ class File_download(QDialog):
                                      QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
 
         if reply == QMessageBox.Yes:
-            self.download_transfer_sock = QTcpSocket(self)
-            self.download_transfer_sock.abort()
-            self.download_transfer_sock.connectToHost(self.ip, self.port + 300)
-            self.download_transfer_sock.readyRead.connect(self.read_file_slot)
-            self.totalBytesToReceive = 0  # 要接收的数据的总大小
-            self.bytesReceived = 0  # 已接收的数据大小
-            self.fileNameSize = 0  # 文件名长度
-            self.flag = 000   #区分是否为文件夹
-            self.counter = 0
             self.save_path = QFileDialog.getExistingDirectory(self, '选择保存路径', os.getcwd())
-            self.sock.write(str(self.index).encode())
-            self.button.setEnabled(False)
+            if len(self.save_path) == 0:
+                 QMessageBox.critical(self, 'Wrong', '保存路径选择失败，请重新选择！')
+            else:
+                self.download_transfer_sock = QTcpSocket(self)
+                self.download_transfer_sock.abort()
+                self.download_transfer_sock.connectToHost(self.ip, self.port + 300)
+                self.download_transfer_sock.readyRead.connect(self.read_file_slot)
+                self.totalBytesToReceive = 0  # 要接收的数据的总大小
+                self.bytesReceived = 0  # 已接收的数据大小
+                self.fileNameSize = 0  # 文件名长度
+                self.flag = 000   #区分是否为文件夹
+                self.counter = 0
+                self.sock.write(str(self.index).encode())
+                self.button.setEnabled(False)
             
         else:
             QMessageBox.information(self, '取消下载', '请重新选择！')
@@ -590,9 +612,11 @@ class File_download(QDialog):
                     self.flag = dataStream.readInt64()
                     self.bytesReceived += 3
                     self.progress_bar.setValue(0)
-                    if self.flag == 111:
+                    if self.flag == 111:        #文件夹结束标记
+                        self.shut_flag = 1
                         QMessageBox.information(self, 'information', '文件夹接收成功')
                         self.button.setEnabled(True)
+                        self.sock.close()
                         self.download_transfer_sock.close()
                 if self.download_transfer_sock.bytesAvailable() >= self.fileNameSize and self.fileNameSize != 0:
                     fileName = dataStream.readQString()
@@ -632,7 +656,9 @@ class File_download(QDialog):
                     self.toFile.close()
                 elif self.flag == 000:
                     self.toFile.close()
+                    self.shut_flag = 1
                     self.download_transfer_sock.close()
+                    self.sock.close()
                     QMessageBox.information(self, 'information', '文件接收成功')
                     self.button.setEnabled(True)
                 if int(self.flag/10)%10 == 1:
@@ -662,7 +688,6 @@ class File_download(QDialog):
         reply = QMessageBox.question(self, 'Warning', '确认退出？', QMessageBox.Yes, QMessageBox.No)
         if reply == QMessageBox.Yes:
             self.shut_flag = 1
-            self.sock.close()
             event.accept()
         else:
             event.ignore()

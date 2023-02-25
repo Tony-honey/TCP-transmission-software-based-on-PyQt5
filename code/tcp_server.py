@@ -73,14 +73,18 @@ class Server(QWidget):
         self.server_peer_port = -1
         self.transfer_peer_port = -1
 
+
         self.edit.textChanged.connect(self.text_change_slot)
 
     def text_change_slot(self):
         message = self.edit.toPlainText()     
         if '\n' in message:     
-            message = message.replace('\n','')            
-            self.edit.setText(message)            
-            self.write_data_slot()
+            message = message.replace('\n','')   
+            if len(message) != 0:         
+                self.edit.setText(message)            
+                self.write_data_slot() 
+            else:
+                self.edit.clear()
 
     
     def file_sock_slot(self):
@@ -115,7 +119,7 @@ class Server(QWidget):
         self.transfer_peer_port = peer_port
         sock.disconnected.connect(lambda: self.disconnected_slot(sock))
         sock.bytesWritten.connect(lambda: self.sendData_slot(sock))
-        self.file_download_sock.pauseAccepting()
+        self.file_transfer_sock.pauseAccepting()
 
     def new_socket_slot(self):
         sock = self.server.nextPendingConnection()
@@ -133,10 +137,11 @@ class Server(QWidget):
 
     def write_data_slot(self):
         message = self.edit.toPlainText()
-        self.browser.append('Server: {}'.format(message))
-        datagram = message.encode()
-        self.server_sock.write(datagram)
-        self.edit.clear()
+        if len(message) != 0:
+            self.browser.append('Server: {}'.format(message))
+            datagram = message.encode()
+            self.server_sock.write(datagram)
+            self.edit.clear()
     
     # 3
     def read_data_slot(self, sock):
@@ -240,11 +245,20 @@ class Server(QWidget):
             self.file_name_list = []
             self.dir_path_list = []
             self.file_path_list = []
+            self.file_size_list = []
+            self.folder_size_list = []
             for dirname in dirnames:
                 self.dir_name_list.append(dirname)
                 dir_path = os.path.join(path, dirname)
                 self.dir_path_list.append(dir_path)
-                message = dirname + "/"
+                folder_size_temp = 0
+                for path_temp, _, filenames_temp in os.walk(dir_path):
+                    for filename_temp in filenames_temp:
+                        file_path_temp = path_temp + "\\" + filename_temp
+                        info_folder_file = QFileInfo(file_path_temp)
+                        folder_size_temp += info_folder_file.size()
+                self.folder_size_list.append(folder_size_temp)
+                message = dirname +"({} MB)".format(round(folder_size_temp/1024/1024, 6)) + "/"     #分割不同文件夹名称,这是因为文件名不能包含/
                 datagram = message.encode()
                 sock.write(datagram)
 
@@ -252,21 +266,26 @@ class Server(QWidget):
                 self.file_name_list.append(filename)
                 file_path = os.path.join(path, filename)
                 self.file_path_list.append(file_path)
-                message = filename + "/"
+                file_info = QFileInfo(file_path)
+                file_size_temp = file_info.size()
+                self.file_size_list.append(file_size_temp)
+                message = filename +"({} MB)".format(round(file_size_temp/1024/1024, 6)) + "/"
                 datagram = message.encode()
                 sock.write(datagram)
 
-            break
+            break       #只要第一层
 
     def download_selection_slot(self, sock):
         while sock.bytesAvailable():
             datagram_temp = sock.read(sock.bytesAvailable()).decode()
             datagram = int(datagram_temp)
             if datagram < len(self.dir_name_list):
-                self.browser.append('Server: 需要下载的文件夹名称 {}'.format(self.dir_name_list[datagram]))
+                self.browser.append('Server: 需要下载的文件夹名称 {}'.format(self.dir_name_list[datagram])+
+                                    '\t文件夹大小为{}'.format(round(self.folder_size_list[datagram]/1024/1024, 6)) + 'MB')
                 self.download_folder(self.dir_name_list[datagram], self.dir_path_list[datagram])
             elif datagram < len(self.dir_name_list) + len(self.file_name_list):
-                self.browser.append('Server: 需要下载的文件名称 {}'.format(self.file_name_list[datagram-len(self.dir_name_list)]))
+                self.browser.append('Server: 需要下载的文件名称 {}'.format(self.file_name_list[datagram-len(self.dir_name_list)])+
+                                    '\t文件大小为{}'.format(round(self.file_size_list[datagram-len(self.dir_name_list)]/1024/1024, 6))+'MB')
                 self.download_file(self.file_name_list[datagram-len(self.dir_name_list)], self.file_path_list[datagram-len(self.dir_name_list)])
 
     def download_folder(self, foldername, dirpath):
@@ -275,20 +294,19 @@ class Server(QWidget):
         self.info = QFileInfo(dirpath)
         self.folder_name = self.info.fileName()
 
-        cnt = 0
         for path, dirnames, filenames in os.walk(dirpath):
             fpath = path.replace(dirpath, '')
-            if len(dirnames) == 0 and len(filenames) == 0 and cnt == 0:
-                self.null_flag = 1
-            else:
-                self.null_flag = 0
-            cnt += 1
             for filename in filenames:
                 self.name = fpath + "\\" + filename
                 self.name_list.append(self.name)
                 self.file_path = path + "\\" + filename
                 self.path_list.append(self.file_path)
                 self.info_folder_file = QFileInfo(self.file_path)
+
+        if len(filenames) == 0:
+            self.null_flag = 1
+        else:
+            self.null_flag = 0
 
    
         self.download_flag = 110   # flag中的第一位表示发送文件夹或文件，第二位标记是文件夹中的文件还是单独发送文件
@@ -434,6 +452,10 @@ class Server(QWidget):
             news = 'Disconnected with IP address {}, port {}'.format(peer_address, str(peer_port))
             self.browser.append(news)
             self.server.resumeAccepting()
+            QMessageBox.information(self, 'information', '客户端异常关闭')
+            self.progress_bar.setValue(0)
+            self.bytesReceived = 0
+            self.fileNameSize = 0
             
         
         if peer_port == self.file_peer_port:
